@@ -201,13 +201,13 @@ awx --conf.host <url> --conf.username <username> --conf.token <token> ad_hoc_com
 Creating a project:
 
 ```bash
-awx projects create --wait --organization  --name='My project' --scm_type git --scm_url 'https://github.com/lm-sec/offensive-awx' -f human
+awx projects create --wait --organization  --name='My project' --scm_type git --scm_url 'https://github.com/lm-sec/offensive-awx.git' -f human
 ```
 
 Modifying a project's `scm_url`:
 
 ```bash
-awx projects modify <id> --scm_url "https://github.com/lm-sec/offensive-awx"
+awx projects modify <id> --scm_url "https://github.com/lm-sec/offensive-awx.git"
 ```
 
 For a private git repository, you can create credentials and add them to the project. Use the `Source Control` credential type:
@@ -215,7 +215,7 @@ For a private git repository, you can create credentials and add them to the pro
 ```bash
 awx credential_types list -f human
 awx organization list -f human
-awx credentials create --name "GitHub read" --description "GitHub personal access token" --organization <id> --credential_type <id> --username "your-user" --password "github_pat_your-access-token" -f human
+awx credentials create --name "GitHub read" --description "GitHub personal access token" --organization <id> --credential_type <id> --inputs '{ "username":"your-user", "password":"github_pat_your-access-token" }' -f human
 awx projects modify <id> --credential <id> -f human
 ```
 
@@ -227,7 +227,7 @@ Listing job templates in the human readable format:
 awx job_templates list -f human
 ```
 
-Creating a job template for the `hostname_whoami.yml` playbook for a project with the `scm_url` value of `https://github.com/lm-sec/offensive-awx`:
+Creating a job template for the `hostname_whoami.yml` playbook for a project with the `scm_url` value of `https://github.com/lm-sec/offensive-awx.git`:
 
 ```bash
 awx job_templates create --name='My job template' --project <id> --inventory <id> --playbook '/playbooks/hostname_whoami.yml' -f human
