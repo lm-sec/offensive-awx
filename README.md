@@ -230,7 +230,7 @@ awx job_templates list -f human
 Creating a job template for the `hostname_whoami.yml` playbook for a project with the `scm_url` value of `https://github.com/lm-sec/offensive-awx.git`:
 
 ```bash
-awx job_templates create --name='My job template' --project <id> --inventory <id> --playbook '/playbooks/hostname_whoami.yml' -f human
+awx job_templates create --name='My job template' --project <id> --inventory <id> --playbook 'playbooks/hostname_whoami.yml' -f human
 ```
 
 Launching a job template:
@@ -243,6 +243,18 @@ Reading the output:
 
 ```bash
 awx jobs stdout <id>
+```
+
+Changing a job template's playbook:
+
+```bash
+awx job_templates modify <id> --playbook "playbooks/hostname_whoami.yml"
+```
+
+Changing a job template's branch:
+
+```bash
+awx job_templates modify <id> --scm_branch "main"
 ```
 
 ## Credential stealing
