@@ -1,0 +1,41 @@
+---
+- name: "3.5 Challenge 2"
+  hosts: all
+  gather_facts: true
+  tasks: 
+
+    - name: Ensure user systemd directory exists.
+      ansible.builtin.file:
+        path: /home/user35-2/.config/systemd/user/
+        state: directory
+
+    - name: Create systemd unit.
+      ansible.builtin.copy:
+        dest: /home/user35-2/.config/systemd/user/poc.service
+        content: |
+          [Unit]
+          Description={{ service.name }}
+          After=network.target
+
+          [Service]
+          ExecStart={{ service.start_cmd }}
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload user systemd configurations
+      ansible.builtin.systemd_service:
+        scope: user
+        daemon_reload: true
+
+    - name: Start user service
+      ansible.builtin.systemd_service:
+        scope: user
+        name: poc
+        state: started
+
+    - name: Print debug info 
+      ansible.builtin.shell: |
+        journalctl --user --no-pager -xeu poc
+      when: service.debug is defined
+

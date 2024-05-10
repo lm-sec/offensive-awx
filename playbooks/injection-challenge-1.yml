@@ -1,0 +1,8 @@
+---
+
+- name: 3.5 Challenge 1
+  gather_facts: true
+  hosts: all
+  tasks:
+    - ansible.builtin.shell: |
+        echo '{{ message }}' | /usr/games/cowsay
