@@ -378,7 +378,7 @@ Here is an exemple of a delegated task:
       delegate_to: host-1
 ```
 
-This would cause the `print /etc/hosts content` task to run on `host-1`, all other tasks will be executed on the target host.
+This would cause the second task to run on `host-1`, all other tasks will be executed on the target hosts.
 
 When a `job_template` is launched, a new pod is created by `awx-operator`, then the context of the execution is sent to this pod and the `machine id` credential is configured in the local SSH-Agent.
 This pod is called the **execution node**, after all of the setup is done, the execution of the playbook begins.
