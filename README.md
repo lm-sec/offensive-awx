@@ -358,3 +358,90 @@ cat '{{ filepath | quote }}'
 This is useful when you are constrained in what you can change about the job_template you have execution rights on.
 Most of the time, this is when a system administrators has delegated certain job_templates to an actor for their work related activities.
 
+
+## Compromising the execution node for pivoting 
+
+It is possible to delegate the execution of a task to a given host when executing a playbook.
+To do so, we can use the [delegate_to](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_delegation.html#delegating-tasks) keyword on a task. This keyword needs a host as argument.
+Here is an exemple of a delegated task:
+
+```yml
+---
+- name: read /etc/hosts
+  hosts: all 
+  tasks:
+    - name: print target hosts
+      ansible.builtin.shell: cat /etc/hosts
+
+    - name: print host-1 hosts
+      ansible.builtin.shell: cat /etc/hosts
+      delegate_to: host-1
+```
+
+This would cause the `print /etc/hosts content` task to run on `host-1`, all other tasks will be executed on the target host.
+
+When a `job_template` is launched, a new pod is created by `awx-operator`, then the context of the execution is sent to this pod and the `machine id` credential is configured in the local SSH-Agent.
+This pod is called the **execution node**, after all of the setup is done, the execution of the playbook begins.
+
+Therefore, by delegating a task to `127.0.0.1`, we can target the execution node and stop the playbook in its tracks.
+Since the SSH-Agent is already configured and any password or passphrase needed has been given, we can use ssh commands directly.
+
+### Tunneling
+
+Using this we can create SSH tunnels between hosts, this can be useful for pivoting in different subnets.  
+Here is an example that assumes a certain level of segregation between the dev and prod environments.
+However, the AWX instance is used to manage both subnets, without proper segregation.
+
+```bash
+---
+- name: tunnel
+  hosts: all 
+  tasks:
+    - name: 
+      ansible.builtin.shell: |
+         ssh -R 9999:prod-host:25 dev-host -N
+      delegate_to: 127.0.0.1 
+
+```
+> You can add `-f` flag to the SSH command to background it instantly.
+
+In this case, an attacker could forward a production host's port to a machine in the dev subnet that they can reach.
+We used SMTP as an example.
+
+### Lateral movement
+
+Using this, we can also hijack the SSH-Agent to connect to a host we would normally not be able to interact with through AWX.  
+This does depends on a reuse of credentials (SSH key or password) to be exploitable, but it happens often in larger environments.  
+
+Assuming we have an inventory containing only `host-1`, and we do not have the rights to modify it.
+There is a second host called `host-2` to which we want to connect, but we have no way to through AWX.
+
+Here is an example that leverages this technique to pivot on `host-2` :
+
+```bash
+---
+- name: execute commands on host-2
+  hosts: all 
+  tasks:
+    - name: 
+      ansible.builtin.shell: |
+        ssh host-2 -- [...]
+      delegate_to: 127.0.0.1 
+```
+
+### Paramiko
+
+The execution node comes pre-packaged with the dependencies needed to run ansible playbooks.
+One such dependency is a library called [Paramiko](https://www.paramiko.org/).
+This library is an implementation of the SSHv2 protocol in pure python, both client and server.
+
+This can be used to bypass certain mitigations that could have been made to the SSH server of execution nodes. 
+Since the SSH daemon will never be contacted by our Paramiko script, we can bypass the hardened configurations of the SSH daemon.
+The Paramiko library is also able to interact with the SSH-Agent directly and connect to hosts using its keys.
+
+Here is an example of using paramiko inline in a playbook :
+
+```
+WIP
+```
+
