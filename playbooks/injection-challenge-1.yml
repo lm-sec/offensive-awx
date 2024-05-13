@@ -1,8 +1,12 @@
 ---
 
-- name: 3.5 Challenge 1
+- name: "3.5 Challenge 1 :: Cowsay"
   gather_facts: true
   hosts: all
   tasks:
     - ansible.builtin.shell: |
         echo '{{ message }}' | /usr/games/cowsay
+      register: stdout
+
+    - ansible.builtin.debug:
+        var: stdout

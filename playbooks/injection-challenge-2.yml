@@ -1,5 +1,5 @@
 ---
-- name: "3.5 Challenge 2"
+- name: "3.5 Challenge 2 :: Service Failure"
   hosts: all
   gather_facts: true
   tasks: 
@@ -34,8 +34,14 @@
         name: poc
         state: started
 
-    - name: Print debug info 
+    - name: Get journal
       ansible.builtin.shell: |
         journalctl --user --no-pager -xeu poc
+      register: stdout
+      when: service.debug is defined
+
+    - name: debug
+      ansible.builtin.debug:
+        var: stdout
       when: service.debug is defined
 

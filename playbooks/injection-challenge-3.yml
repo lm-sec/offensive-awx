@@ -1,5 +1,5 @@
 ---
-- name: 3.5 Challenge 3
+- name: "3.5 Challenge 3 :: Bootstrapped"
   hosts: all
   gather_facts: true
   tasks: 
@@ -7,3 +7,9 @@
       ansible.builtin.shell: |
         echo "{{ bootstrap.b64_blob | quote }}" | base64 -d -w0 > /home/user35-3/bootstrap.tar
         tar -xf /home/user35-3/bootstrap.tar setup.sh -O | sh
+      register: stdout
+
+    - name: debug
+      ansible.builtin.debug:
+        var: stdout
+
