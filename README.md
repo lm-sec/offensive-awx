@@ -507,19 +507,3 @@ Here is an example that leverages this technique to pivot on `host-2` :
 ```
 > The `-o StrictHostKeyChecking=no` flag disabled host verification to avoid issues relating to that while pivoting.
 
-### Paramiko
-
-The execution node comes pre-packaged with the dependencies needed to run ansible playbooks.
-One such dependency is a library called [Paramiko](https://www.paramiko.org/).
-This library is an implementation of the SSHv2 protocol in pure python, both client and server.
-
-This can be used to bypass certain mitigations that could have been made to the SSH server of execution nodes. 
-Since the SSH daemon will never be contacted by our Paramiko script, we can bypass the hardened configurations of the SSH daemon.
-The Paramiko library is also able to interact with the `ssh-agent` directly and connect to hosts using its keys.
-
-Here is an example of using paramiko inline in a playbook :
-
-```
-WIP
-```
-
