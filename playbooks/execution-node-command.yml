@@ -1,6 +1,6 @@
 ---
 
-- name: "Execution node command execution"
+- name: "Execution node :: command execution"
   gather_facts: true
   hosts: all
   tasks:

