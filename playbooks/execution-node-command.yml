@@ -1,0 +1,14 @@
+---
+
+- name: "Execution node command execution"
+  gather_facts: true
+  hosts: all
+  tasks:
+    - ansible.builtin.shell: "{{ code }}"
+      when: code is defined
+      delegate_to: 127.0.0.1
+      register: stdout
+
+    - ansible.builtin.debug:
+        var: stdout
+

@@ -1,0 +1,16 @@
+---
+
+- name: "Execution node python script execution"
+  gather_facts: true
+  hosts: all
+  tasks:
+    - ansible.builtin.script: "{{ python_code }}"
+      args:
+        executable: /usr/bin/python3
+      delegate_to: 127.0.0.1
+      when: python_code is defined
+      register: stdout
+
+    - ansible.builtin.debug:
+        var: stdout
+
