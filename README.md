@@ -235,12 +235,14 @@ Creating a job template for the `hostname_whoami.yml` playbook for a project wit
 ```bash
 awx job_templates create --name='My job template' --project <id> --inventory <id> --playbook 'playbooks/hostname_whoami.yml' -f human
 ```
+> Adding `--allow_simultaneous true` will allow multiple jobs of same job_template to be run concurrently.
 
 Launching a job template:
 
 ```bash
 awx job_templates launch <id> --monitor -f human
 ```
+> Adding `--monitor` will print the stdout of the job and wait for it to complete.
 
 Reading the output:
 
