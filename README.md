@@ -71,11 +71,18 @@ export CONTROLLER_PASSWORD=Passw0rd1
 awx login --description "Pentest XYZ" -f human
 ```
 
+
 Listing your tokens will display the one you just created:
 
 ```bash
 awx me -f human
 awx tokens list -f human --filter "id,name,description" --user <id>
+```
+
+To export your token and make use of it through `awxcli`, you can use the following:
+
+```
+export CONTROLLER_OAUTH_TOKEN="[...]"
 ```
 
 To clean up your token, you can use the `delete` function:
